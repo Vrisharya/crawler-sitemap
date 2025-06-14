@@ -1,3 +1,4 @@
+import logging
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -8,7 +9,6 @@ from urllib.parse import urlparse, urljoin
 from webdriver_manager.chrome import ChromeDriverManager
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
-import logging
 import time
 import datetime
 
@@ -53,17 +53,18 @@ def extract_internal_links(driver, base_url, domain):
                 internal_links.add(href.rstrip('/'))
     return internal_links
 
-def crawl_website(start_url, max_retries=2):
+def crawl_website(start_url, max_retries=2, max_depth=3):
     domain = urlparse(start_url).netloc
     visited = set()
-    queue = [start_url.rstrip('/')]
+    queue = [(start_url.rstrip('/'), 0)]
     all_links = set()
     driver = init_driver()
 
     while queue:
-        current_url = queue.pop(0)
-        if current_url in visited:
+        current_url, depth = queue.pop(0)
+        if current_url in visited or depth > max_depth:
             continue
+
         for attempt in range(max_retries):
             try:
                 driver.get(current_url)
@@ -75,17 +76,18 @@ def crawl_website(start_url, max_retries=2):
                     break
                 scroll_to_bottom(driver)
                 links = extract_internal_links(driver, current_url, domain)
-                new_links = links - visited - set(queue)
-                queue.extend(new_links)
+                new_links = links - visited
+                queue.extend((link, depth + 1) for link in new_links)
                 all_links.add(current_url)
                 visited.add(current_url)
-                logging.info(f"Crawled: {current_url} | Found: {len(links)} links")
+                logging.info(f"Crawled: {current_url} | Depth: {depth} | Found: {len(links)} links")
                 break
             except Exception as e:
                 logging.warning(f"Attempt {attempt + 1} failed for {current_url}: {e}")
                 if attempt == max_retries - 1:
                     logging.error(f"Giving up on {current_url} after {max_retries} attempts.")
                     visited.add(current_url)
+
     driver.quit()
     return sorted(all_links)
 
